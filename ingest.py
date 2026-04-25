@@ -144,7 +144,7 @@ def insert_rows(client, rows: list[dict]) -> int:
     return len(rows)
 
 #Historical fill of all comics
-def historical_comics(client=None, max_comics: Optional[int] = None, dry_run: bool = False) -> None:
+def historical_comics(client, max_comics: Optional[int] = None) -> None:
         
     logger.info("Begin historical ingestion.")
 
@@ -159,12 +159,8 @@ def historical_comics(client=None, max_comics: Optional[int] = None, dry_run: bo
 
     logger.info(f"Latest comic number is {latest_num}.")
 
-    if dry_run:
-        existing_nums = set()
-        logger.info("Dry run enabled. Rows will be printed instead of inserted into BigQuery.")
-    else:
-        existing_nums = get_exisiting_comic_nums(client)
-        logger.info(f"Found {len(existing_nums)} existing comics in BigQuery.") 
+    existing_nums = get_exisiting_comic_nums(client)
+    logger.info(f"Found {len(existing_nums)} existing comics in BigQuery.") 
 
     batch: list[dict] = []
     inserted_count = 0
@@ -183,25 +179,16 @@ def historical_comics(client=None, max_comics: Optional[int] = None, dry_run: bo
         batch.append(transform_comic(raw))
 
         if len(batch) >= 100:
-            if dry_run:
-                print(json.dumps(batch, indent=2, sort_keys=True))
-                inserted = len(batch)
-            else:
-                inserted = insert_rows(client, batch)
+            inserted = insert_rows(client, batch)
             inserted_count = inserted_count + inserted
             logger.info(f"Inserted batch")
             batch = []
 
     if batch:
-        if dry_run:
-            print(json.dumps(batch, indent=2, sort_keys=True))
-            inserted = len(batch)
-        else:
-            inserted = insert_rows(client, batch)
+        inserted = insert_rows(client, batch)
         inserted_count = inserted_count + inserted
 
-    action = "Prepared" if dry_run else "Inserted"
-    logger.info(f"Historical ingestion complete. {action} {inserted_count} new comics.")
+    logger.info(f"Historical ingestion complete. Inserted {inserted_count} new comics.")
 
 #incremental fetch for latest comic
     
@@ -234,11 +221,6 @@ def main():
         default=None,
         help="Limit historical ingestion to comics 1 through this number.",
     )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Print historical rows instead of inserting into BigQuery.",
-    )
     args = parser.parse_args()
 
     if args.test_transformer:
@@ -260,18 +242,16 @@ def main():
 
     if args.historical:
         try:
-            client = None if args.dry_run else get_bq_client()
+            client = get_bq_client()
         except DefaultCredentialsError:
             logger.error(
                 "Google Application Default Credentials were not found. "
-                "Run `gcloud auth application-default login` and try again, "
-                "or use `--dry-run` to test without BigQuery."
+                "Run `gcloud auth application-default login` and try again."
             )
             raise SystemExit(1)
 
-        if client is not None:
-            table_exists(client)
-        historical_comics(client=client, max_comics=args.max_comics, dry_run=args.dry_run)
+        table_exists(client)
+        historical_comics(client=client, max_comics=args.max_comics)
         return
 
     raw_comic = fetch_comic(args.comic)
