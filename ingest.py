@@ -19,7 +19,7 @@ import time
 
 PROJECT_ID = 'skip-comics'
 DATASET_ID    = "skipcomics"
-TABLE_ID      = "raw_comics_cleaned"
+TABLE_ID      = "raw_comics"
 FULL_TABLE_ID = f"{PROJECT_ID}.{DATASET_ID}.{TABLE_ID}" 
  
 XKCD_BASE_URL    = "https://xkcd.com" 
