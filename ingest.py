@@ -19,7 +19,7 @@ import time
 
 PROJECT_ID = 'skip-comics'
 DATASET_ID    = "skipcomics"
-TABLE_ID      = "raw_comics"
+TABLE_ID      = "raw_comics_cleaned"
 FULL_TABLE_ID = f"{PROJECT_ID}.{DATASET_ID}.{TABLE_ID}" 
  
 XKCD_BASE_URL    = "https://xkcd.com" 
@@ -178,7 +178,7 @@ def historical_comics(client, max_comics: Optional[int] = None) -> None:
 
         batch.append(transform_comic(raw))
 
-        if len(batch) >= 100:
+        if len(batch) >= 500:
             inserted = insert_rows(client, batch)
             inserted_count = inserted_count + inserted
             logger.info(f"Inserted batch")
@@ -191,77 +191,54 @@ def historical_comics(client, max_comics: Optional[int] = None) -> None:
     logger.info(f"Historical ingestion complete. Inserted {inserted_count} new comics.")
 
 #incremental fetch for latest comic
+def streaming_comic(client) -> None:
+    raw = fetch_comic()
+    if not raw:
+        raise RuntimeError("Failed to fetch latest comic during streaming.")
+    
+    latest_num = raw["num"] 
+
+    #check if comic already exists in bigquery
+    existing_nums = get_exisiting_comic_nums(client)
+    if latest_num in existing_nums:
+        logger.info(f"Latest comic {latest_num} already exists in BigQuery. No new comic to insert.")
+        return  
+    
+    row = transform_comic(raw)
+    insert_rows(client, [row])   
+    logger.info(f"Inserted latest comic {latest_num} into BigQuery.")
+
+def setup():
+
+    client = get_bq_client()
+    table_exists(client)
+    logger.info("Dataset and table ready.")
+
+def ingest_historical():
+    client = get_bq_client()
+    historical_comics(client)
+
+def ingest_incremental():
+    client = get_bq_client()
+    streaming_comic(client)
     
 def main():
-    parser = argparse.ArgumentParser(description="Fetch XKCD comic metadata.")
+
+    parser = argparse.ArgumentParser(description="XKCD → BigQuery ingestion")
     parser.add_argument(
-        "--comic",
-        type=int,
-        default=None,
-        help="Comic number to fetch. Defaults to the latest comic.",
-    )
-    parser.add_argument(
-        "--raw",
-        action="store_true",
-        help="Print the raw XKCD API response instead of the transformed row.",
-    )
-    parser.add_argument(
-        "--test-transformer",
-        action="store_true",
-        help="Run the transformer against a sample comic without calling the API.",
-    )
-    parser.add_argument(
-        "--historical",
-        action="store_true",
-        help="Run historical ingestion.",
-    )
-    parser.add_argument(
-        "--max-comics",
-        type=int,
-        default=None,
-        help="Limit historical ingestion to comics 1 through this number.",
+        "--mode",
+        choices=["setup", "historical", "incremental"],
+        default="incremental",
+        help="setup = create tables (one-time); historical: load all comics; incremental = latest comic only",
     )
     args = parser.parse_args()
-
-    if args.test_transformer:
-        sample_comic = {
-            "num": 1,
-            "title": "Barrel - Part 1",
-            "safe_title": "Barrel - Part 1",
-            "img": "https://imgs.xkcd.com/comics/barrel_cropped_(1).jpg",
-            "transcript": "[[A boy sits in a barrel which is floating in an ocean.]]",
-            "year": "2006",
-            "month": "1",
-            "day": "1",
-            "news": "",
-        }
-        transformed = transform_comic(sample_comic)
-        logger.info("Transformer test produced comic %s: %s", transformed["num"], transformed["title"])
-        print(json.dumps(transformed, indent=2, sort_keys=True))
-        return
-
-    if args.historical:
-        try:
-            client = get_bq_client()
-        except DefaultCredentialsError:
-            logger.error(
-                "Google Application Default Credentials were not found. "
-                "Run `gcloud auth application-default login` and try again."
-            )
-            raise SystemExit(1)
-
-        table_exists(client)
-        historical_comics(client=client, max_comics=args.max_comics)
-        return
-
-    raw_comic = fetch_comic(args.comic)
-    if raw_comic is None:
-        raise SystemExit(1)
-
-    logger.info("Fetched comic %s: %s", raw_comic["num"], raw_comic["title"])
-    result = raw_comic if args.raw else transform_comic(raw_comic)
-    print(json.dumps(result, indent=2, sort_keys=True))
-
-
+ 
+    if args.mode == "setup":
+        setup()
+    elif args.mode == "historical":
+        ingest_historical()
+    else:
+        ingest_incremental()
+ 
 if __name__ == "__main__":
     main()
