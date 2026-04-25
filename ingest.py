@@ -14,10 +14,12 @@ from typing import Optional
 from datetime import datetime, timezone
 from google.cloud import bigquery
 from google.api_core.exceptions import NotFound
+from google.auth.exceptions import DefaultCredentialsError
+import time
 
 PROJECT_ID = 'skip-comics'
-DATASET_ID    = "skip-comics.skipcomics"       
-TABLE_ID      = "raw comics" 
+DATASET_ID    = "skipcomics"
+TABLE_ID      = "raw_comics"
 FULL_TABLE_ID = f"{PROJECT_ID}.{DATASET_ID}.{TABLE_ID}" 
  
 XKCD_BASE_URL    = "https://xkcd.com" 
@@ -119,7 +121,7 @@ def table_exists(client) -> None:
         logger.info(f"Table {TABLE_ID} not found. Creating table.")
         client.create_table(table)
 
-def get_exisiting_comic_nums(client) -> set[int]
+def get_exisiting_comic_nums(client) -> set[int]:
 
     query = f"SELECT DISTINCT num FROM `{FULL_TABLE_ID}`"
 
@@ -128,8 +130,80 @@ def get_exisiting_comic_nums(client) -> set[int]
         return set(row.num for row in result)
     except NotFound:
         return set() #empty set if table doesnt exist
-    
 
+#insert rows
+def insert_rows(client, rows: list[dict]) -> int:
+    if not rows:
+        return 0
+    
+    errors = client.insert_rows_json(FULL_TABLE_ID, rows)
+
+    if errors:
+        logger.error(f"Error inserting rows: {errors}")
+        return 0
+    return len(rows)
+
+#Historical fill of all comics
+def historical_comics(client=None, max_comics: Optional[int] = None, dry_run: bool = False) -> None:
+        
+    logger.info("Begin historical ingestion.")
+
+    latest = fetch_comic()
+    if latest is None:
+        logger.error("Could not fetch latest comic. Stopping historical ingestion.")
+        raise SystemExit(1)
+
+    latest_num = latest["num"]
+    if max_comics is not None:
+        latest_num = min(latest_num, max_comics)
+
+    logger.info(f"Latest comic number is {latest_num}.")
+
+    if dry_run:
+        existing_nums = set()
+        logger.info("Dry run enabled. Rows will be printed instead of inserted into BigQuery.")
+    else:
+        existing_nums = get_exisiting_comic_nums(client)
+        logger.info(f"Found {len(existing_nums)} existing comics in BigQuery.") 
+
+    batch: list[dict] = []
+    inserted_count = 0
+
+    for num in range(1, latest_num + 1):
+    
+        if num in existing_nums:
+            continue
+
+        raw = fetch_comic(num)
+        time.sleep(0.2) #delay for requests
+
+        if raw is None:
+            continue
+
+        batch.append(transform_comic(raw))
+
+        if len(batch) >= 100:
+            if dry_run:
+                print(json.dumps(batch, indent=2, sort_keys=True))
+                inserted = len(batch)
+            else:
+                inserted = insert_rows(client, batch)
+            inserted_count = inserted_count + inserted
+            logger.info(f"Inserted batch")
+            batch = []
+
+    if batch:
+        if dry_run:
+            print(json.dumps(batch, indent=2, sort_keys=True))
+            inserted = len(batch)
+        else:
+            inserted = insert_rows(client, batch)
+        inserted_count = inserted_count + inserted
+
+    action = "Prepared" if dry_run else "Inserted"
+    logger.info(f"Historical ingestion complete. {action} {inserted_count} new comics.")
+
+#incremental fetch for latest comic
     
 def main():
     parser = argparse.ArgumentParser(description="Fetch XKCD comic metadata.")
@@ -149,6 +223,22 @@ def main():
         action="store_true",
         help="Run the transformer against a sample comic without calling the API.",
     )
+    parser.add_argument(
+        "--historical",
+        action="store_true",
+        help="Run historical ingestion.",
+    )
+    parser.add_argument(
+        "--max-comics",
+        type=int,
+        default=None,
+        help="Limit historical ingestion to comics 1 through this number.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print historical rows instead of inserting into BigQuery.",
+    )
     args = parser.parse_args()
 
     if args.test_transformer:
@@ -166,6 +256,22 @@ def main():
         transformed = transform_comic(sample_comic)
         logger.info("Transformer test produced comic %s: %s", transformed["num"], transformed["title"])
         print(json.dumps(transformed, indent=2, sort_keys=True))
+        return
+
+    if args.historical:
+        try:
+            client = None if args.dry_run else get_bq_client()
+        except DefaultCredentialsError:
+            logger.error(
+                "Google Application Default Credentials were not found. "
+                "Run `gcloud auth application-default login` and try again, "
+                "or use `--dry-run` to test without BigQuery."
+            )
+            raise SystemExit(1)
+
+        if client is not None:
+            table_exists(client)
+        historical_comics(client=client, max_comics=args.max_comics, dry_run=args.dry_run)
         return
 
     raw_comic = fetch_comic(args.comic)
