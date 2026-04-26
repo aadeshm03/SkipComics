@@ -10,4 +10,4 @@ xkcd:
       timeout_seconds: 300
       location: northamerica-northeast2
       retries: 1
-      keyfile: /Users/aadeshmehra/Desktop/Skip/skip-comics-9b8c28f81a6b.json
+      keyfile: /Users/aadeshmehra/Desktop/skip-comics-9b8c28f81a6b.json
