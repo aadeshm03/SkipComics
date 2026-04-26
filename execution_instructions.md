@@ -1,170 +1,274 @@
-This guide walks through how to set up, test, and run the pipeline
-from start to finish.
+This guide walks through how to set up, test, and run the pipeline from start to finish.
 
-## PART 1: LOCAL SETUP & TESTING
+## Part 1: Local Setup
+
 ### 1.1 Prerequisites
-Python 3.9+
-GCP account with BigQuery enabled
-Service account key for authentication
-Git (optional, for version control)
+
+- Python 3.9+
+- GCP account with BigQuery enabled
+- Service account key for BigQuery authentication
+- Git, optional
 
 ### 1.2 Directory Structure
-xkcd_project/
-├── ingest_py           # Python ingestion script
-├── airflow_dag.py             # Airflow DAG (copy to ~/airflow/dags/)
-├── README.md                  # Project overview
-├── execution_intructions.md         # This file
-└── dbt/                       # dbt project
-├── dbt_project.yml
-├── models/
-│   ├── staging/
-│   │   └── saging.sql
-│   ├── marts/
-│   │   ├── dim_comic.sql
-│   │   ├── dim_date.sql
-│   │   └── fact_comic.sql
-│   └── schema.yml
-└── README.md
-## PART 2: GCP & BIGQUERY SETUP
-### 2.1 Create a GCP Project
 
-Go to https://console.cloud.google.com
-Create a new project (e.g., "xkcd-pipeline")
-Enable BigQuery API
+```text
+Skip/
+├── ingest.py
+├── airflow_dag.py
+├── README.md
+├── execution_instructions.md
+├── skip-comics-9b8c28f81a6b.json
+└── dbt/
+    ├── dbt_project.yml
+    ├── profiles.yml
+    └── models/
+        ├── staging/
+        │   └── staging.sql
+        ├── marts/
+        │   ├── dim_comic.sql
+        │   ├── dim_date.sql
+        │   └── fact_comic.sql
+        └── schema.yml
+```
 
-### 2.2 Create a Service Account
+## Part 2: GCP and BigQuery Setup
 
-Go to IAM & Admin → Service Accounts
-Create new service account (e.g., "xkcd-pipeline-sa")
-Grant roles:
+### 2.1 GCP Project
 
-BigQuery Admin (for creating datasets/tables)
-BigQuery Data Editor (for inserting/querying data)
+The current project ID used by `ingest.py` and dbt is:
 
+```text
+skip-comics
+```
 
-Create a JSON key and download it
-Save to: ~/.gcp/xkcd-sa-key.json (or your preferred location)
+Enable the BigQuery API for this project.
 
-### 2.3 Create BigQuery Datasets
-Run these commands in BigQuery console or via gcloud:
-sql-- Raw data layer
-CREATE SCHEMA IF NOT EXISTS `your-project-id.xkcd_raw`
-OPTIONS(description="Raw XKCD data from API");
+### 2.2 Service Account
 
-Analytical layer
-CREATE SCHEMA IF NOT EXISTS `your-project-id.xkcd_marts`
-Change your-project-id to your actual GCP project ID.
+Create a service account with BigQuery permissions. The current dbt profile uses:
 
-## PART 3: PYTHON INGESTION SETUP
+```yaml
+method: service-account
+project: skip-comics
+dataset: xkcd_marts
+location: northamerica-northeast2
+```
+
+Make sure the `keyfile` path in [dbt/profiles.yml](/Users/aadeshmehra/Desktop/Skip/dbt/profiles.yml:10) points to your downloaded service account JSON file.
+
+### 2.3 BigQuery Datasets
+
+The ingestion script writes raw data here:
+
+```text
+skip-comics.skipcomics.raw_comics
+```
+
+dbt writes transformed marts here:
+
+```text
+skip-comics.xkcd_marts
+```
+
+`ingest.py --mode setup` creates the raw dataset/table if they do not exist. dbt creates the marts tables when you run `dbt run`.
+
+## Part 3: Python Ingestion
+
 ### 3.1 Install Dependencies
-bashpip install requests google-cloud-bigquery
 
-### 3.2 Configure the Script
-Edit ingest.py:
-Line 26:
-PROJECT_ID = "your-project-id"  ← Change to your GCP project
+```bash
+pip install requests google-cloud-bigquery
+```
 
-### 3.3 Set Environment Variable
-bashexport GOOGLE_APPLICATION_CREDENTIALS=~/.gcp/xkcd-sa-key.json
+If you are using the existing virtual environment:
 
-### 3.4 Test the Ingestion Script
-First time - create the table:
-bashpython ingest.py --mode setup
-Expected output: "Setup complete. Dataset and table ready."
+```bash
+source venv/bin/activate
+```
 
-Then do a full historical backfill (one-time):
-bashpython ingest.py --mode historical
-This fetches all 3,200+ XKCD comics and loads them.
-Expected time: 5-10 minutes (due to time buffer between API calls)
+### 3.2 Current Ingestion Methods
 
-(Optional) Verify in BigQuery:
-sqlSELECT COUNT(*) as total_comics FROM `your-project-id.xkcd_raw.raw_comics`;
-Should return: 3,200+
+The current callable methods in [ingest.py](/Users/aadeshmehra/Desktop/Skip/ingest.py:205) are:
 
-Test incremental mode:
-bashpython ingest.py --mode incremental
-This fetches only the latest comic. If the comic from today was pulled through the historical fill, delete using the below query, it may take some time due to stream buffering.
+- `setup()`: creates/checks the BigQuery dataset and raw table.
+- `ingest_historical()`: fetches historical XKCD comics and inserts missing rows.
+- `ingest_incremental()`: fetches only the latest comic if it is not already loaded.
 
-Once deleted, run the incremental again, it should complete in <2 seconds
+The CLI uses:
 
-## PART 4: AIRFLOW SETUP
+```bash
+venv/bin/python ingest.py --mode setup
+venv/bin/python ingest.py --mode historical
+venv/bin/python ingest.py --mode incremental
+```
+
+### 3.3 Configure Authentication
+
+For the Python ingestion script, either set Application Default Credentials:
+
+```bash
+gcloud auth application-default login
+```
+
+or set the service account key explicitly:
+
+```bash
+export GOOGLE_APPLICATION_CREDENTIALS=/path/to/your/service-account-key.json
+```
+
+### 3.4 Run Ingestion
+
+Create/check the raw dataset and table:
+
+```bash
+venv/bin/python ingest.py --mode setup
+```
+
+Run the historical backfill:
+
+```bash
+venv/bin/python ingest.py --mode historical
+```
+
+Run the incremental latest-comic load:
+
+```bash
+venv/bin/python ingest.py --mode incremental
+```
+
+Verify raw rows in BigQuery:
+
+```sql
+SELECT COUNT(*) AS total_comics
+FROM `skip-comics.skipcomics.raw_comics`;
+```
+
+## Part 4: Airflow
 
 ### 4.1 Install Airflow
-bashpip install apache-airflow
+
+```bash
+pip install apache-airflow
+```
 
 ### 4.2 Initialize Airflow
-bashairflow db init
+
+```bash
+airflow db init
+```
 
 ### 4.3 Create Airflow User
-bashairflow users create \
-    --username admin \
-    --firstname Admin \
-    --lastname User \
-    --role Admin \
-    --email admin@example.com
+
+```bash
+airflow users create \
+  --username admin \
+  --firstname Admin \
+  --lastname User \
+  --role Admin \
+  --email admin@example.com
+```
 
 ### 4.4 Copy DAG File
-bashmkdir -p ~/airflow/dags
+
+```bash
+mkdir -p ~/airflow/dags
 cp airflow_dag.py ~/airflow/dags/airflow_dag.py
+```
 
 ### 4.5 Update DAG File
-Edit ~/airflow/dags/airflow_dag.py
-Line 13:
-sys.path.insert(0, '/path/to/ingest/')  ← Update to your project path
+
+In [airflow_dag.py](/Users/aadeshmehra/Desktop/Skip/airflow_dag.py:13), make sure this path points to your local project:
+
+```python
+sys.path.insert(0, '/Users/aadeshmehra/Desktop/Skip')
+```
+
+The DAG imports these methods from `ingest.py`:
+
+```python
+ingest_historical
+ingest_incremental
+setup
+get_bq_client
+get_exisiting_comic_nums
+fetch_comic
+```
 
 ### 4.6 Test the DAG
-bashairflow dags list
-Should see: xkcd_ingestion listed
 
-### Test a single run:
+```bash
+airflow dags list
+```
+
+You should see:
+
+```text
+xkcd_ingestion
+```
+
+Test one run:
+
+```bash
 airflow dags test xkcd_ingestion 2026-01-01
-Expected output:
+```
 
-poll_for_new_comic task: PASSED
-ingest_latest_comic task: PASSED
-ingestion_success task: PASSED
+Expected task IDs:
 
-## PART 5: DBT SETUP
+```text
+poll_for_new_comic
+ingest_latest_comic
+ingestion_success
+```
+
+## Part 5: dbt
 
 ### 5.1 Install dbt
-bashpip install dbt-bigquery
 
-### 5.2 Configure BigQuery Connection
-Create ~/.dbt/profiles.yml:
-yamlxkcd:
-  target: dev
-  outputs:
-    dev:
-      type: bigquery
-      method: service-account
-      project: your-project-id
-      dataset: xkcd_marts
-      keyfile: ~/.gcp/xkcd-sa-key.json
-      location: US
-      threads: 4
-Change:
+```bash
+pip install dbt-bigquery
+```
 
-your-project-id: Your actual GCP project
-keyfile path: Your service account key location
+### 5.2 Current dbt Profile
 
-### 5.3 Test Connection
-bashcd dbt
-dbt debug
-#### Should output: All checks passed!
+The project uses:
 
-### 5.4 Run dbt Models
-bashdbt run
-Expected output:
+```yaml
+profile: xkcd
+```
 
-1 ephemeral (temp table) model compiled (staging)
-3 table models created:
+from [dbt/dbt_project.yml](/Users/aadeshmehra/Desktop/Skip/dbt/dbt_project.yml:5).
 
-dim_comic (3,200+ rows)
-dim_date (2,000+ rows)
-fact_comic_metrics (3,200+ rows)
+The repo-local profile is [dbt/profiles.yml](/Users/aadeshmehra/Desktop/Skip/dbt/profiles.yml:1), so run dbt with `--profiles-dir dbt` from the repo root.
 
-### 5.5 Verify Tables in BigQuery
-sqlSELECT * FROM `your-project-id.xkcd_marts.dim_comic` LIMIT 5;
-SELECT * FROM `your-project-id.xkcd_marts.dim_date` LIMIT 5;
-SELECT * FROM `your-project-id.xkcd_marts.fact_comic_metrics` LIMIT 5;
+### 5.3 Test dbt Connection
 
+```bash
+venv/bin/dbt debug --project-dir dbt --profiles-dir dbt
+```
+
+### 5.4 Compile dbt Models
+
+```bash
+venv/bin/dbt compile --project-dir dbt --profiles-dir dbt
+```
+
+### 5.5 Run dbt Models
+
+```bash
+venv/bin/dbt run --project-dir dbt --profiles-dir dbt
+```
+
+Expected models:
+
+- `staging`: ephemeral model
+- `dim_comic`: table in `xkcd_marts`
+- `dim_date`: table in `xkcd_marts`
+- `fact_comic`: table in `xkcd_marts`
+
+### 5.6 Verify Marts in BigQuery
+
+```sql
+SELECT * FROM `skip-comics.xkcd_marts.dim_comic` LIMIT 5;
+SELECT * FROM `skip-comics.xkcd_marts.dim_date` LIMIT 5;
+SELECT * FROM `skip-comics.xkcd_marts.fact_comic` LIMIT 5;
+```
