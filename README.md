@@ -1,9 +1,9 @@
-## SkipComics
-# XKCD Data Pipeline
+# SkipComics
+## XKCD Data Pipeline
 
 This project builds an automated data pipeline that pulls comic data from the XKCD API, loads the raw data into BigQuery, and transforms it into analytics-ready tables using dbt.
 
-## Pipeline Overview
+### Pipeline Overview
 
 The pipeline follows this flow:
 
