@@ -1,0 +1,94 @@
+version: 2
+
+sources:
+  - name: xkcd
+    description: "Raw comics data ingested from xkcd api"
+    database: skip-comics
+    schema: skipcomics
+    tables:
+      - name: raw_comics
+        description: "Raw comics data ingested from xkcd api"
+        columns:
+          - name: num
+            description: "Comic number, unique identifier for each comic"
+          - name: title
+            description: "Title of the comic"
+          - name: safe_title
+            description: "Safe title of the comic, used in URLs"
+          - name: img
+            description: "URL of the comic image"
+          - name: transcript
+            description: "Transcript of the comic, if available"
+          - name: publish_date
+            description: "Publish date of the comic"
+          - name: fetched_at
+            description: "Timestamp when the comic data was fetched from the API"
+          - name: year
+            description: "Year when the comic was published"
+          - name: month
+            description: "Month when the comic was published"
+models:
+  - name: staging
+    description: "Staging model to clean and prepare the raw comic data for transformations"
+    columns:
+      - name: comic_id
+        description: "Comic number, unique identifier for each comic"
+      - name: title
+        description: "Title of the comic"
+      - name: safe_title
+        description: "Safe title of the comic"
+      - name: transcript
+        description: "Transcript of the comic, if available"
+      - name: publish_date
+        description: "Publish date of the comic"
+      - name: fetched_at
+        description: "Timestamp of when the comic was fetched from the API"
+      - name: year
+        description: "Year when the comic was published"
+      - name: month
+        description: "Month when the comic was published"
+      - name: views
+        description: "Randomly generated number of views for the comic"
+      - name: review
+        description: "Randomly generated review score for the comic"
+      - name: creation_cost
+        description: "Calculated creation cost based on the length of the comic title"
+
+  - name: dim_date
+    description: "Dimension table for date attributes related to comic publication"
+    columns:
+      - name: publish_date
+        description: "Unique identifier for the date, in YYYYMMDD format"
+      - name: month
+        description: "Month when the comic was published"
+      - name: year
+        description: "Year when the comic was published"
+      - name: day_of_week
+        description: "Day of the week when the comic was published (e.g., Monday, Tuesday)"
+
+  - name: dim_comic
+    description: "Dimension table for comic attributes"
+    columns:
+      - name: comic_id
+        description: "Comic number, unique identifier for each comic"
+      - name: title
+        description: "Title of the comic"
+      - name: safe_title
+        description: "Safe title of the comic"
+      - name: transcript
+        description: "Transcript of the comic, if available"
+      - name: creation_cost
+        description: "Calculated creation cost based on the length of the comic title"
+  - name: fact_comic
+    description: "Fact table for comic metrics and attributes"
+    columns:
+      - name: comic_id
+        description: "Comic number, Primary key and Foreign key to dim_comic"
+      - name: publish_date
+        description: "Publish date of the comic, foreign key to dim_date"
+      - name: view_count
+        description: "Randomly generated number of views for the comic"
+      - name: average_review
+        description: "Randomly generated average review score for the comic"
+      - name: cost_to_views_ratio
+        description: "Calculated ratio of creation cost per view for the comic"

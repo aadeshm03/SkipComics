@@ -1,0 +1,22 @@
+name: 'xkcd_transformation'
+version: '1.0'
+config-version: 2
+
+profile: 'xkcd'
+
+model-paths: ["models"]
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  xkcd_transformation:
+    materialized: table
+
+    staging:
+      materialized: ephemeral
+
+    marts:
+      materialized: table
+
