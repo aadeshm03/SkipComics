@@ -52,6 +52,7 @@ def polling_new_comic():
         return True
     
     else: 
+        logger.info(f"No new comic found during polling. Latest comic is {latest_num}.")    
         return False
     
 #define task #1 to poll for new comic

@@ -25,7 +25,7 @@ cleaned as (
     --Calculate random views 
     cast(floor(rand() * 10000) as int64) as views,
     --calculate random review
-    round(rand() * 10, 1) as review
+    round(1 + rand() * 9, 1) as review
     from source
 )
 

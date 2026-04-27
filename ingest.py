@@ -144,19 +144,16 @@ def insert_rows(client, rows: list[dict]) -> int:
     return len(rows)
 
 #Historical fill of all comics
-def historical_comics(client, max_comics: Optional[int] = None) -> None:
-        
+def historical_comics(client) -> None:
+
     logger.info("Begin historical ingestion.")
 
     latest = fetch_comic()
     if latest is None:
-        logger.error("Could not fetch latest comic. Stopping historical ingestion.")
+        logger.error("Could not fetch latest comic.")
         raise SystemExit(1)
 
     latest_num = latest["num"]
-    if max_comics is not None:
-        latest_num = min(latest_num, max_comics)
-
     logger.info(f"Latest comic number is {latest_num}.")
 
     existing_nums = get_exisiting_comic_nums(client)

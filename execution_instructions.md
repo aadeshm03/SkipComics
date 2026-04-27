@@ -220,6 +220,13 @@ ingest_latest_comic
 ingestion_success
 ```
 
+If the test doesn't work, it is possible the latest comic already exists in your big query table, delete it using the below query with whichever number is most recent
+
+```sql
+DELETE FROM `skip-comics.skipcomics.raw_comics`
+WHERE num = 3237;
+```
+
 ## Part 5: dbt
 
 ### 5.1 Install dbt
@@ -268,7 +275,7 @@ Expected models:
 ### 5.6 Verify Marts in BigQuery
 
 ```sql
-SELECT * FROM `skip-comics.xkcd_marts.dim_comic` LIMIT 5;
-SELECT * FROM `skip-comics.xkcd_marts.dim_date` LIMIT 5;
-SELECT * FROM `skip-comics.xkcd_marts.fact_comic` LIMIT 5;
+SELECT * FROM `skip-comics.xkcd_marts.dim_comic`;
+SELECT * FROM `skip-comics.xkcd_marts.dim_date`;
+SELECT * FROM `skip-comics.xkcd_marts.fact_comic`;
 ```
